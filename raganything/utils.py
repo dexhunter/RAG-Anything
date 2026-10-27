@@ -365,53 +365,74 @@ def _token_window_spans(
     the ``"\n\n"`` between blocks cannot match them.
     """
     tokens = tokenizer.encode(text)
-    if tokenizer.decode(tokens) != text:
+    decode = tokenizer.decode
+    whole = decode(tokens)
+    if whole != text:
         return None
     context = _BOUNDARY_CONTEXT_TOKENS
-
-    def decoded_length(begin: int, finish: int) -> int:
-        return len(tokenizer.decode(tokens[max(begin, 0) : finish]))
+    token_count = len(tokens)
+    # Per-boundary results, indexed by token position inside the text. A
+    # window's end boundary is a later window's start, and the offset update
+    # needs the same ``(boundary - context, boundary)`` length that the
+    # boundary's fragment count decodes, so all three decodes of a boundary
+    # are done together once and both results are kept.
+    fragments: List[Optional[int]] = [0] + [None] * (token_count - 1)
+    heads: List[int] = [0] * token_count
 
     def cut_fragments(boundary: int) -> int:
-        """Extra characters decoding splits at ``boundary`` creates: 0 when
-        it falls between characters, else the U+FFFD standing in for the
-        cut character's continuation bytes."""
-        if boundary <= 0 or boundary >= len(tokens):
-            return 0
-        return (
-            decoded_length(boundary - context, boundary)
-            + decoded_length(boundary, boundary + context)
-            - decoded_length(boundary - context, boundary + context)
+        """Extra characters decoding splits at ``0 < boundary < len(tokens)``
+        creates: 0 when it falls between characters, else the U+FFFD standing
+        in for the cut character's continuation bytes."""
+        low = boundary - context if boundary > context else 0
+        high = boundary + context
+        head = heads[boundary] = len(decode(tokens[low:boundary]))
+        count = fragments[boundary] = (
+            head + len(decode(tokens[boundary:high])) - len(decode(tokens[low:high]))
         )
+        return count
 
     windows: List[Tuple[str, Optional[Tuple[int, int]]]] = []
     offset = 0  # len(decode(tokens[:start]))
     previous = 0
-    for start in range(0, len(tokens), step):
+    for start in range(0, token_count, step):
         if start > previous:
-            anchor = max(0, previous - context)
-            offset += decoded_length(anchor, start) - decoded_length(anchor, previous)
+            anchor = previous - context if previous > context else 0
+            offset += len(decode(tokens[anchor:start])) - (
+                heads[previous] if previous else len(decode(tokens[:0]))
+            )
         previous = start
-        raw = tokenizer.decode(tokens[start : start + size])
+        finish = start + size
+        if start == 0 and finish >= token_count:
+            raw = whole  # the single window is the round-trip decode
+        else:
+            raw = decode(tokens[start:finish])
         # A character cut at the start leaves leading U+FFFD (its
         # continuation bytes) with no slot of their own in the source; one
         # cut at the end leaves a single U+FFFD (its leading bytes) in its
         # slot. Neither is text the chunk actually covers.
-        stray = cut_fragments(start)
-        end_fragments = cut_fragments(start + size)
-        if (
-            stray < 0
-            or end_fragments < 0
-            or raw[:stray] != "\ufffd" * min(stray, len(raw))
-        ):
+        stray = fragments[start]
+        if stray is None:
+            stray = cut_fragments(start)
+        if 0 < finish < token_count:
+            end_fragments = fragments[finish]
+            if end_fragments is None:
+                end_fragments = cut_fragments(finish)
+        else:
+            end_fragments = 0
+        raw_length = len(raw)
+        if stray < 0 or end_fragments < 0:
             return None
-        cut_end = 1 if end_fragments else 0
-        if stray >= len(raw):
+        if stray and raw[:stray] != "\ufffd" * min(stray, raw_length):
+            return None
+        if stray >= raw_length:
             body = ""  # the window lies inside the one character cut at start
         else:
-            if cut_end and not raw.endswith("\ufffd"):
-                return None
-            body = raw[stray : len(raw) - cut_end]
+            if end_fragments:
+                if not raw.endswith("\ufffd"):
+                    return None
+                body = raw[stray : raw_length - 1]
+            else:
+                body = raw[stray:] if stray else raw
             if not text.startswith(body, offset):
                 return None
         windows.append((raw, _stripped_span(body, offset)))
