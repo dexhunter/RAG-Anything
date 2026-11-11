@@ -465,34 +465,42 @@ class ProcessorMixin:
         Returns:
             str: Content-based document ID with doc- prefix
         """
-        from lightrag.utils import compute_mdhash_id
-
-        # Extract key content for ID generation
-        content_hash_data = []
+        digest = hashlib.md5()
+        count = 0
+        invalid_part = None
 
         for item in content_list:
             if isinstance(item, dict):
                 # For text content, use the text
                 if item.get("type") == "text" and item.get("text"):
-                    content_hash_data.append(item["text"].strip())
+                    part = item["text"].strip()
                 # For other content types, use key identifiers
                 elif item.get("type") == "image" and item.get("img_path"):
-                    content_hash_data.append(f"image:{item['img_path']}")
+                    part = f"image:{item['img_path']}"
                 elif item.get("type") == "table" and item.get("table_body"):
-                    content_hash_data.append(f"table:{item['table_body']}")
+                    part = f"table:{item['table_body']}"
                 elif item.get("type") == "equation" and item.get("text"):
-                    content_hash_data.append(f"equation:{item['text']}")
+                    part = f"equation:{item['text']}"
                 else:
                     # For other types, use string representation
-                    content_hash_data.append(str(item))
+                    part = str(item)
 
-        # Create a content signature
-        content_signature = "\n".join(content_hash_data)
+                # Preserve extraction errors before join's type validation.
+                if not isinstance(part, str):
+                    if invalid_part is None:
+                        invalid_part = (count, part)
+                elif invalid_part is None:
+                    if count:
+                        digest.update(b"\n")
+                    for start in range(0, str.__len__(part), 512):
+                        chunk = str.__getitem__(part, slice(start, start + 512))
+                        digest.update(str.encode(chunk, "utf-8", errors="replace"))
+                count += 1
 
-        # Generate doc_id from content
-        doc_id = compute_mdhash_id(content_signature, prefix="doc-")
-
-        return doc_id
+        if invalid_part is not None:
+            index, part = invalid_part
+            "\n".join([""] * index + [part])
+        return "doc-" + digest.hexdigest()
 
     async def _get_cached_result(
         self, cache_key: str, file_path: Path, parse_method: str = None, **kwargs
