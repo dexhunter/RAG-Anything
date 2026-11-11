@@ -1,0 +1,57 @@
+[
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "2cd2b3329c470ccb53923f8a6d320596b34e56c5",
+    "file": "raganything/mineru_content.py",
+    "function": "_text_value",
+    "native_test_cmd": "python -m pytest tests/test_mineru_content.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_text_value.py",
+    "baseline_median_ms": 42.763,
+    "baseline_noise_pct": 1.474,
+    "tests_pass_on_baseline": true,
+    "workload": "180-page MinerU content_list_v2 export: 6 paragraphs per page, about 60 word-level spans each, with an inline equation every 17 spans.",
+    "notes": "convert_mineru_content_list_v2 spends almost all of its time in _text_value. Each span is a recursive isinstance/dict walk, and _join_text_parts then concatenates the paragraph one piece at a time while calling a Python CJK check on every boundary. A straight-line path for text and inline-equation spans that appends into one list keeps the same string; on this workload that cut the call from about 63ms to about 33ms."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "2cd2b3329c470ccb53923f8a6d320596b34e56c5",
+    "file": "raganything/modalprocessors.py",
+    "function": "ContextExtractor._extract_page_context",
+    "native_test_cmd": "python -m pytest tests/test_document_context_isolation.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_extract_page_context.py",
+    "baseline_median_ms": 45.737,
+    "baseline_noise_pct": 3.207,
+    "tests_pass_on_baseline": true,
+    "workload": "300-page illustrated manual, 12 text blocks per page and one figure per page; one _extract_page_context call per figure on the shared extractor, matching multimodal ingest.",
+    "notes": "Every figure walks the entire content list to collect a +/- 1 page window, so cost grows with figures times blocks. The same extractor and content list are reused for the whole document, so a page index cached on the extractor turns later calls into a window lookup. An index built once reproduced the same context text and dropped this workload from about 78ms to about 3ms."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "2cd2b3329c470ccb53923f8a6d320596b34e56c5",
+    "file": "raganything/processor.py",
+    "function": "ProcessorMixin._generate_content_based_doc_id",
+    "native_test_cmd": "python -m pytest tests/test_chart_image_routing.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_doc_id_memory.py",
+    "metric_kind": "peak_memory_bytes",
+    "baseline_value": 2389554,
+    "baseline_noise_pct": 0.002,
+    "metric_benchmark": "python osspr-intake/harness/bench_doc_id_memory.py",
+    "labeled_data": null,
+    "tests_pass_on_baseline": true,
+    "workload": "500-page OCR content list, about 2.2k characters of text per page plus an image path every fifth page, hashed into a content-based doc id at insert.",
+    "notes": "The method joins every block into one signature string, and compute_mdhash_id copies that string again before MD5. Updating an MD5 with the same newline-separated pieces returns the identical doc- id. tracemalloc peak inside the call fell from 2389554 bytes to 2514 bytes on this list (about 2.3 MiB), which is the temporary signature rather than the caller's content list."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "2cd2b3329c470ccb53923f8a6d320596b34e56c5",
+    "file": "raganything/parser.py",
+    "function": "Parser._process_inline_markdown",
+    "native_test_cmd": "python -m pytest tests/test_md_pdf_escape.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_inline_markdown.py",
+    "baseline_median_ms": 45.431,
+    "baseline_noise_pct": 8.988,
+    "tests_pass_on_baseline": true,
+    "workload": "250-page technical markdown manual, 32 lines per page, passed line by line through _process_inline_markdown the way Parser.convert_text_to_pdf does.",
+    "notes": "Each line recompiles seven regular expressions (bold, italic, code, link, strike) before matching. Compiling those patterns once produced the same ReportLab markup and cut this manual from about 45ms to about 31ms."
+  }
+]
