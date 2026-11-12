@@ -1,0 +1,67 @@
+[
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "eb7a670f724e59056b6a08f7016d753226a865ee",
+    "file": "raganything/modalprocessors.py",
+    "function": "ContextExtractor._truncate_context",
+    "native_test_cmd": "python -m pytest tests/test_document_context_isolation.py::test_overlapping_documents_keep_their_own_table_prompt -q",
+    "bench_cmd": "python osspr-intake/harness/bench_truncate_context.py",
+    "tests_pass_on_baseline": true,
+    "workload": "One call truncates a 3,613,889-character page (5,000 prose blocks that all share page_idx 0, the shape of a markdown export) down to 2,000 tokens.",
+    "baseline_median_ms": 126.933,
+    "baseline_noise_pct": 1.636,
+    "notes": "The method encodes the entire joined page and then keeps the first 2000 tokens. Encoding only a prefix that grows until those 2000 tokens are covered, with the same sentence-boundary trim, reproduced the baseline string (10,934 characters) in 1.3 ms, about 126 ms less per call. baseline_noise_pct is (max-min)/median*100 over 5 calls after 2 warmups, pinned to one core. Overlap: no open PR or issue names this function. Open PRs #476 (processor.py multimodal_processed guard) and #477 (parser.py UTF-32 BOM in _read_text_with_fallback) do not touch modalprocessors.py. Recent modalprocessors.py merges are correctness fixes (#446, #416, #396, #391), not this truncation. dexhunter PRs on the repo are #448, #450, and #473 (merged today, mineru_content._text_value only); none edit this function."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "eb7a670f724e59056b6a08f7016d753226a865ee",
+    "file": "raganything/parser.py",
+    "function": "MineruParser._read_output_files",
+    "native_test_cmd": "python -m pytest tests/test_mineru_content.py -k read_output_files -q",
+    "bench_cmd": "python osspr-intake/harness/bench_read_output_files.py",
+    "tests_pass_on_baseline": true,
+    "workload": "One call reads a MinerU content list of 3,000 image blocks and resolves each relative img_path against the parse directory.",
+    "baseline_median_ms": 130.552,
+    "baseline_noise_pct": 1.432,
+    "notes": "For every image the method calls Path.resolve() on the path and again on the base directory, which stats the same directory thousands of times. Resolving the base once and joining relative paths that contain no '..' or absolute prefix, while still calling resolve() for those traversal shapes, returned the same 3,000 absolute paths in 9.4 ms, about 121 ms less. baseline_noise_pct is (max-min)/median*100 over 5 calls after 2 warmups, pinned to one core. Overlap: open PR #477 edits parser.py _read_text_with_fallback (UTF-32 BOM), not this reader. Open issue list has nothing on this function; closed #186 was about discovering the output directory and is already merged. Today's #456 edits DoclingParser.read_from_block, not this MinerU path loop. Security fix #197 introduced the traversal check; the prototype keeps resolve() for absolute paths and '..'. dexhunter #448 sped up markdown image scanning in the same file and does not change _read_output_files. #473 is mineru_content._text_value."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "eb7a670f724e59056b6a08f7016d753226a865ee",
+    "file": "raganything/processor.py",
+    "function": "ProcessorMixin._text_chunk_page_labels",
+    "native_test_cmd": "python -m pytest tests/test_text_chunk_page_idx.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_text_chunk_page_labels.py",
+    "tests_pass_on_baseline": true,
+    "workload": "One call assigns page labels to the 600 token windows of a 3,618,888-character sanitized document (5,000 text blocks, chunk size 1200, overlap 100).",
+    "baseline_median_ms": 406.826,
+    "baseline_noise_pct": 4.032,
+    "notes": "The method runs LightRAG chunking_by_token_size and then replay_chunk_spans, and each encodes the full document. Reusing that one token list for the replay (cache cleared every call) produced the same 600 labels in 283 ms, about 124 ms less. The per-block sanitize cost is a separate target and was left in place here. baseline_noise_pct is (max-min)/median*100 over 5 calls after 2 warmups, pinned to one core. Overlap: open PR #476 guards multimodal_processed on processor.py and does not touch this method. No open issue names it. #450 (dexhunter) made each _token_window_spans replay linear; it did not remove this second full encode. Page annotation itself landed in #361. Other recent processor.py merges (#471, #475, #461, #470, #453) are deletion, retries, and doc-status fixes. dexhunter #473 is mineru_content._text_value."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "eb7a670f724e59056b6a08f7016d753226a865ee",
+    "file": "raganything/utils.py",
+    "function": "build_sanitized_page_map",
+    "native_test_cmd": "python -m pytest tests/test_text_chunk_page_idx.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_sanitized_page_map.py",
+    "tests_pass_on_baseline": true,
+    "workload": "One call remaps page intervals for 5,000 prose blocks (3,618,888 characters) that contain no HTML entities or control characters.",
+    "baseline_median_ms": 87.999,
+    "baseline_noise_pct": 2.41,
+    "notes": "The function sanitizes the whole document and then sanitizes and searches for every block. When a single scan finds no entities or control characters, strip offsets alone match sanitize_text_for_encoding, and the slow path stays for everything else. That fast path reproduced the baseline intervals in 28.9 ms, about 59 ms less. baseline_noise_pct is (max-min)/median*100 over 5 calls after 2 warmups, pinned to one core. Overlap: no open PR or issue on this function. utils.py was edited today by #456 (format_table_body / Docling grids) and earlier by dexhunter #450 (_token_window_spans only); neither changes this map. The map was added in #361. dexhunter #448 and #473 are other files."
+  },
+  {
+    "upstream_repo": "HKUDS/RAG-Anything",
+    "head_sha": "eb7a670f724e59056b6a08f7016d753226a865ee",
+    "file": "raganything/omml_extractor.py",
+    "function": "extract_omml_equations",
+    "native_test_cmd": "python -m pytest tests/test_omml_extractor.py -q",
+    "bench_cmd": "python osspr-intake/harness/bench_omml_equations.py",
+    "tests_pass_on_baseline": true,
+    "workload": "One call extracts 4,000 top-level OMML equations from a DOCX whose document.xml is about 790 KB.",
+    "baseline_median_ms": 74.693,
+    "baseline_noise_pct": 0.693,
+    "notes": "After converting each equation to LaTeX the function also ET.tostring's every element into raw_omml, which rewrites namespaces and dominated the call (about 42 ms of the 75 ms). Skipping that reserialization kept the same 4,000 LaTeX strings and finished in 28.8 ms, about 46 ms less; a source-slice can still fill raw_omml without the rewrite. baseline_noise_pct is (max-min)/median*100 over 5 calls after 2 warmups, pinned to one core. Overlap: no open PR or issue on this function. Recent omml merges (#443, #422, #421, #404, #366) change conversion correctness, not serialization. Open PRs #476 and #477 are other files. dexhunter #448, #450, and #473 (today's _text_value merge) do not touch this module."
+  }
+]
