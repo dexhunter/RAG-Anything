@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 # Must be set before tiktoken (or lightrag) resolves an encoding.
-_CACHE = Path(__file__).resolve().parent / "tiktoken_cache"
+_CACHE = Path(__file__).resolve().parent / "encoding_cache"
 os.environ["TIKTOKEN_CACHE_DIR"] = str(_CACHE)
 
 random.seed(0)
