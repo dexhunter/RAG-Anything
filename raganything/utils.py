@@ -341,8 +341,25 @@ def build_sanitized_page_map(
     sanitized = sanitize_text_for_encoding(text_content)
     intervals: List[Tuple[int, int, int]] = []
     cursor = 0
+    # Without entities, sanitization only removes characters. Equality proves
+    # that every slice needs only whitespace trimming.
+    trim_only = (
+        type(text_content) is str
+        and "&" not in text_content
+        and sanitized == text_content.strip()
+    )
+    sanitized_blocks = {}
     for start, end, page_idx in page_intervals:
-        core = sanitize_text_for_encoding(text_content[start:end])
+        block = text_content[start:end]
+        if trim_only:
+            core = block.strip()
+        elif type(block) is str:
+            core = sanitized_blocks.get(block)
+            if core is None:
+                core = sanitize_text_for_encoding(block)
+                sanitized_blocks[block] = core
+        else:
+            core = sanitize_text_for_encoding(block)
         if not core:
             continue
         position = sanitized.find(core, cursor)
@@ -352,7 +369,7 @@ def build_sanitized_page_map(
         # text also occurs inside them cannot be placed there.
         cursor = position + len(core)
         if page_idx is not None:
-            intervals.append((position, position + len(core), page_idx))
+            intervals.append((position, cursor, page_idx))
     return sanitized, intervals
 
 
